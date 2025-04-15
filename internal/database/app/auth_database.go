@@ -29,24 +29,26 @@ func CreateUser(user *models.User) error {
 }
 
 func AuthenticateUser(usernameOrEmail string) (*models.User, error) {
-	var user models.User
-	var userID string
-	var query string
-	var err error
-
-	query = `
-		SELECT id, username, password, first_name, middle_name, last_name, email, student_id, major, year, role_id, email_verification_token, institution_name, gender, email_verified, twofa_enabled, twofa_image, twofa_secret
+	// Use an absolute minimal query with only the essential fields needed for authentication
+	query := `
+		SELECT id, username, password
 		FROM users
 		WHERE username = $1 OR email = $1`
 
-	err = database.DB.QueryRow(
+	log.Printf("Executing minimal login query for user: %s", usernameOrEmail)
+	
+	// Create a minimal user object with just the fields needed for authentication
+	var user models.User
+	var userIDString string
+	
+	err := database.DB.QueryRow(
 		context.Background(),
 		query,
 		usernameOrEmail,
 	).Scan(
-		&userID, &user.Username, &user.Password, &user.FirstName, &user.MiddleName, &user.LastName, &user.Email,
-		&user.StudentID, &user.Major, &user.Year, &user.RoleID, &user.EmailVerificationToken, &user.InstitutionName,
-		&user.Gender, &user.EmailVerified, &user.TwoFAEnabled, &user.TwoFAImage, &user.TwoFASecret,
+		&userIDString,
+		&user.Username,
+		&user.Password,
 	)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -57,10 +59,49 @@ func AuthenticateUser(usernameOrEmail string) (*models.User, error) {
 		return nil, err
 	}
 
-	user.ID, err = uuid.Parse(userID)
+	// Parse the UUID
+	userID, err := uuid.Parse(userIDString)
 	if err != nil {
 		return nil, err
 	}
+	
+	user.ID = userID
+	
+	// Set default values for fields that might be needed but aren't critical for login
+	user.FirstName = ""
+	user.LastName = ""
+	user.Email = usernameOrEmail
+	user.StudentID = ""
+	user.Major = ""
+	user.Year = ""
+	user.Gender = ""
+	user.ProfilePicture = ""
+	user.EmailVerificationToken = ""
+	user.PasswordResetToken = ""
+	user.EmailVerified = false
+	user.TwoFAEnabled = false
+	
+	// Now fetch additional user details if needed
+	detailsQuery := `
+		SELECT email, email_verified, twofa_enabled
+		FROM users
+		WHERE id = $1`
+	
+	err = database.DB.QueryRow(
+		context.Background(),
+		detailsQuery,
+		userID,
+	).Scan(
+		&user.Email,
+		&user.EmailVerified,
+		&user.TwoFAEnabled,
+	)
+	
+	if err != nil {
+		log.Printf("Warning: Could not fetch additional user details: %v", err)
+		// Continue anyway, as we have the essential fields for authentication
+	}
+	
 	return &user, nil
 }
 

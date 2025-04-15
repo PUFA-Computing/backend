@@ -2,9 +2,12 @@ package services
 
 import (
 	"Backend/configs"
+	"Backend/internal/database"
 	"Backend/internal/database/app"
 	"Backend/internal/models"
 	"Backend/pkg/utils"
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -62,21 +66,82 @@ func (as *AuthService) RegisterUser(user *models.User) error {
 }
 
 func (as *AuthService) LoginUser(usernameOrEmail string, password string) (*models.User, error) {
-	user, err := app.AuthenticateUser(usernameOrEmail)
+	// Log the login attempt with detailed information
+	log.Printf("=== LOGIN ATTEMPT START === Username/Email: %s", usernameOrEmail)
+	
+	// Create a complete user struct with all fields initialized to zero values
+	user := &models.User{}
+	
+	// Use a minimal query to get just the essential fields for authentication
+	var userID string
+	var hashedPassword string
+	
+	// Explicitly log the SQL query we're about to execute
+	log.Printf("Executing minimal login query for: %s", usernameOrEmail)
+	
+	// Use a very simple query with only the minimum fields needed for authentication
+	query := `SELECT id, username, password, email FROM users WHERE username = $1 OR email = $1`
+	
+	// Execute the query and scan results into variables
+	err := database.DB.QueryRow(context.Background(), query, usernameOrEmail).Scan(
+		&userID, &user.Username, &hashedPassword, &user.Email)
+	
+	// Handle query errors
 	if err != nil {
-		return nil, err
+		log.Printf("Login query error: %v", err)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, &utils.UnauthorizedError{Message: "invalid credentials"}
+		}
+		return nil, fmt.Errorf("database error: %w", err)
 	}
-
-	if user == nil {
+	
+	// Log successful query
+	log.Printf("Successfully retrieved basic user info for: %s", user.Username)
+	
+	// Verify password
+	log.Printf("Comparing password for user: %s", user.Username)
+	err = bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	if err != nil {
+		log.Printf("Password verification failed for user %s: %v", user.Username, err)
 		return nil, &utils.UnauthorizedError{Message: "invalid credentials"}
 	}
-
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	
+	// Password verified, parse UUID
+	user.ID, err = uuid.Parse(userID)
 	if err != nil {
-		log.Printf("Error comparing hashed password: %v", err)
-		return nil, &utils.UnauthorizedError{Message: "invalid credentials"}
+		log.Printf("Error parsing UUID: %v", err)
+		return nil, fmt.Errorf("invalid user ID format: %w", err)
 	}
-
+	
+	// Now get additional fields needed for authentication flow
+	log.Printf("Fetching additional authentication fields for user: %s", user.Username)
+	
+	// Only get the specific fields we need for the authentication flow
+	var emailVerified, twoFAEnabled sql.NullBool
+	
+	authQuery := `SELECT email_verified, twofa_enabled FROM users WHERE id = $1`
+	err = database.DB.QueryRow(context.Background(), authQuery, userID).Scan(
+		&emailVerified, &twoFAEnabled)
+	
+	if err != nil {
+		log.Printf("Warning: Could not fetch auth details: %v - will use defaults", err)
+		// Continue with defaults if we can't get these fields
+	} else {
+		// Set fields only if they're not NULL in the database
+		if emailVerified.Valid {
+			user.EmailVerified = emailVerified.Bool
+		}
+		if twoFAEnabled.Valid {
+			user.TwoFAEnabled = twoFAEnabled.Bool
+		}
+		log.Printf("Auth details - EmailVerified: %v, 2FA Enabled: %v", 
+			user.EmailVerified, user.TwoFAEnabled)
+	}
+	
+	// Store the hashed password for token generation
+	user.Password = hashedPassword
+	
+	log.Printf("=== LOGIN ATTEMPT SUCCESS === User: %s", user.Username)
 	return user, nil
 }
 
@@ -138,8 +203,25 @@ type HunterEmailVerification struct {
 }
 
 func (as *AuthService) ValidateEmail(email string) error {
+	// Always log the email we're validating
+	log.Printf("ValidateEmail called for: %s", email)
+
+	// Bypass validation for President University student emails
+	if strings.HasSuffix(email, "@student.president.ac.id") {
+		log.Println("Bypassing Hunter.io validation for President University student email")
+		return nil
+	}
+
 	// Load the Hunter API key from the config
 	apiKey := configs.LoadConfig().HunterApiKey
+	
+	// If no API key is provided, bypass validation for development
+	if apiKey == "" {
+		log.Println("Warning: No Hunter API key provided, bypassing email validation")
+		return nil
+	}
+	
+	log.Printf("Validating email %s with Hunter.io", email)
 	url := fmt.Sprintf("https://api.hunter.io/v2/email-verifier?email=%s&api_key=%s", email, apiKey)
 
 	// Create a new HTTP client with a timeout

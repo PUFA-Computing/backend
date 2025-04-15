@@ -9,6 +9,17 @@ import (
 	"log"
 )
 
+func tryInitRedis() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("WARNING: Redis initialization failed: %v", r)
+			log.Println("Application will continue without Redis. Token revocation will not work.")
+		}
+	}()
+	
+	utils.InitRedis()
+}
+
 func main() {
 	err := godotenv.Load(".env")
 	if err != nil {
@@ -18,7 +29,9 @@ func main() {
 
 	database.Migrate()
 	database.Init(config)
-	utils.InitRedis()
+	
+	// Try to initialize Redis, but continue if it fails
+	tryInitRedis()
 
 	r := api.SetupRoutes()
 

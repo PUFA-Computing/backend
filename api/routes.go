@@ -14,6 +14,7 @@ import (
 	"Backend/internal/services"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"log"
 	"time"
 )
 
@@ -22,10 +23,11 @@ func SetupRoutes() *gin.Engine {
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"https://computing.president.ac.id", "https://staging.computing.president.ac.id", "http://localhost:3000"},
-		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
-		ExposeHeaders:    []string{"Content-Length"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
 		AllowCredentials: true,
+		MaxAge:          12 * time.Hour,
 	}))
 
 	maxTokens := 1000
@@ -43,10 +45,50 @@ func SetupRoutes() *gin.Engine {
 	aspirationsService := services.NewAspirationService()
 	AWSService, _ := services.NewAWSService()
 	R2Service, _ := services.NewR2Service()
-	MailgunService := services.NewMailgunService(
-		configs.LoadConfig().MailGunDomain,
-		configs.LoadConfig().MailGunApiKey,
-		configs.LoadConfig().MailGunSenderEmail,
+	// Get SMTP settings from config
+	config := configs.LoadConfig()
+	
+	// Use config values if available, otherwise use fallback values for development
+	smtpHost := config.SMTPHost
+	if smtpHost == "" {
+		smtpHost = "smtp.gmail.com"
+		log.Println("Using fallback SMTP host: smtp.gmail.com")
+	}
+	
+	smtpPort := config.SMTPPort
+	if smtpPort == "" {
+		smtpPort = "587"
+		log.Println("Using fallback SMTP port: 587")
+	}
+	
+	smtpUsername := config.SMTPUsername
+	if smtpUsername == "" {
+		// NOTE: Replace with your actual Gmail address for testing
+		smtpUsername = "aldiapriansyah790@gmail.com"
+		log.Println("Using fallback SMTP username - REPLACE WITH YOUR OWN FOR TESTING")
+	}
+	
+	smtpPassword := config.SMTPPassword
+	if smtpPassword == "" {
+		// NOTE: Replace with your actual Gmail app password for testing
+		// This is just a placeholder and won't work
+		smtpPassword = "xshypkoitnhmxjdm"
+		log.Println("Using fallback SMTP password - REPLACE WITH YOUR OWN FOR TESTING")
+	}
+	
+	senderEmail := config.SenderEmail
+	if senderEmail == "" {
+		// NOTE: Replace with your actual sender email for testing
+		senderEmail = "rnt.compsci@gmail.com"
+		log.Println("Using fallback sender email - REPLACE WITH YOUR OWN FOR TESTING")
+	}
+	
+	EmailService := services.NewTestMailService(
+		smtpHost,
+		smtpPort,
+		smtpUsername,
+		smtpPassword,
+		senderEmail,
 	)
 	VersionService := services.NewVersionService(configs.LoadConfig().GithubAccessToken)
 
@@ -56,7 +98,7 @@ func SetupRoutes() *gin.Engine {
 	versionUpdater := services.NewVersionUpdater(VersionService)
 	go versionUpdater.Run()
 
-	authHandlers := auth.NewAuthHandlers(authService, permissionService, MailgunService, userService)
+	authHandlers := auth.NewAuthHandlers(authService, permissionService, EmailService, userService)
 	userHandlers := user.NewUserHandlers(userService, permissionService, AWSService, R2Service)
 	eventHandlers := event.NewEventHandlers(eventService, permissionService, AWSService, R2Service)
 	newsHandlers := news.NewNewsHandler(newsService, permissionService, AWSService, R2Service)

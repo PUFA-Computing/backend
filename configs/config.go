@@ -27,9 +27,11 @@ type Config struct {
 	AWSRegion          string
 	S3Bucket           string
 
-	MailGunDomain      string
-	MailGunApiKey      string
-	MailGunSenderEmail string
+	SMTPHost      string
+	SMTPPort      string
+	SMTPUsername  string
+	SMTPPassword  string
+	SenderEmail   string
 
 	GithubAccessToken string
 	HunterApiKey      string
@@ -66,9 +68,11 @@ func LoadConfig() *Config {
 		AWSSecretAccessKey:    os.Getenv("AWS_SECRET_ACCESS_KEY"),
 		AWSRegion:             os.Getenv("AWS_REGION"),
 		S3Bucket:              os.Getenv("S3_BUCKET"),
-		MailGunDomain:         os.Getenv("MAILGUN_DOMAIN"),
-		MailGunApiKey:         os.Getenv("MAILGUN_API_KEY"),
-		MailGunSenderEmail:    os.Getenv("MAILGUN_SENDER_EMAIL"),
+		SMTPHost:         os.Getenv("SMTP_HOST"),
+		SMTPPort:         os.Getenv("SMTP_PORT"),
+		SMTPUsername:     os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:     os.Getenv("SMTP_PASSWORD"),
+		SenderEmail:      os.Getenv("SENDER_EMAIL"),
 		BaseURL:               baseURl,
 		GithubAccessToken:     os.Getenv("GH_ACCESS_TOKEN"),
 		HunterApiKey:          os.Getenv("HUNTER_API_KEY"),
