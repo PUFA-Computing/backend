@@ -1,6 +1,7 @@
 package user
 
 import (
+	"Backend/internal/database/app"
 	"Backend/internal/handlers/auth"
 	"Backend/internal/models"
 	"Backend/internal/services"
@@ -240,6 +241,50 @@ func (h *Handlers) ListUsers(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Users Retrieved Successfully",
+		"data":    users,
+	})
+}
+
+// and than us the GetAllUsersBasic to handles the request to get all users with basic fields
+func (h *Handlers) GetAllUsersBasic(c *gin.Context) {
+	tokenString, err := utils.ExtractTokenFromHeader(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": []string{"Unauthorized"}})
+		return
+	}
+
+	claims, err := utils.ValidateToken(tokenString, os.Getenv("JWT_SECRET_KEY"))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": []string{"Unauthorized"}})
+		return
+	}
+
+	userID := claims.UserID
+
+	// do checkif user has admin permission
+	hasPermission, err := h.PermissionService.CheckPermission(context.Background(), userID, "users:list")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": []string{"Error checking permissions"}})
+		return
+	}
+
+	if !hasPermission {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": []string{"Permission Denied"}})
+		return
+	}
+
+	log.Println("Fetching all users with basic fields")
+	users, err := app.GetAllUsersBasic()
+	if err != nil {
+		log.Printf("Error getting all users: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": []string{"Failed to retrieve users"}})
+		return
+	}
+
+	log.Printf("Successfully retrieved %d users", len(users))
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "Users Retrieved Successfully",

@@ -507,7 +507,12 @@ func ListUsers() ([]models.User, error) {
 
 	log.Println("before query")
 
-	rows, err := database.DB.Query(context.Background(), "SELECT * FROM users")
+	// previously, we got a NULL issues. so now, we use a simpler query to avoid that 
+	query := `SELECT id, username, password, first_name, last_name, email, student_id, major, 
+		profile_picture, role_id, created_at, updated_at, year, gender, email_verified, student_id_verified, twofa_enabled 
+		FROM users`
+
+	rows, err := database.DB.Query(context.Background(), query)
 	if err != nil {
 		log.Println("Error executing query:", err)
 		return nil, err
@@ -516,25 +521,43 @@ func ListUsers() ([]models.User, error) {
 
 	for rows.Next() {
 		var user models.User
-
+		var userID string
+		
 		log.Println("before scan")
+		// just scan for non-nullable fields to avoid that errors
 		err := rows.Scan(
-			&user.ID, &user.Username, &user.Password, &user.FirstName, &user.MiddleName, &user.LastName,
-			&user.Email, &user.StudentID, &user.Major, &user.ProfilePicture, &user.DateOfBirth,
-			&user.RoleID, &user.CreatedAt, &user.UpdatedAt, &user.Year, &user.EmailVerified,
-			&user.EmailVerificationToken, &user.PasswordResetToken, &user.PasswordResetExpires,
-			&user.StudentIDVerified, &user.StudentIDVerification, &user.InstitutionName, &user.Gender,
-			&user.TwoFAEnabled, &user.TwoFAImage, &user.TwoFASecret,
+			&userID,
+			&user.Username,
+			&user.Password,
+			&user.FirstName,
+			&user.LastName,
+			&user.Email,
+			&user.StudentID,
+			&user.Major,
+			&user.ProfilePicture,
+			&user.RoleID,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+			&user.Year,
+			&user.Gender,
+			&user.EmailVerified,
+			&user.StudentIDVerified,
+			&user.TwoFAEnabled,
 		)
 		if err != nil {
 			log.Println("Error scanning row:", err)
 			return nil, err
 		}
 
+		// parse UUID
+		user.ID, err = uuid.Parse(userID)
+		if err != nil {
+			log.Println("Error parsing UUID:", err)
+			return nil, err
+		}
+
 		log.Println("after scan")
-
 		users = append(users, user)
-
 		log.Println("after append")
 	}
 
@@ -544,7 +567,73 @@ func ListUsers() ([]models.User, error) {
 	}
 
 	log.Println("after loop")
+	log.Printf("Successfully retrieved %d users", len(users))
+	return users, nil
+}
 
+func GetAllUsersBasic() ([]models.User, error) {
+	var users []models.User
+
+	log.Println("Getting all users with basic fields")
+
+	// use a very simple query with only essential fields
+	query := `SELECT id, username, first_name, last_name, email, student_id, major, 
+		profile_picture, role_id, year, gender, email_verified, student_id_verified 
+		FROM users`
+
+	rows, err := database.DB.Query(context.Background(), query)
+	if err != nil {
+		log.Println("Error executing basic users query:", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var user models.User
+		var userID string
+		
+		// again, only scan essential non-nullable fields
+		err := rows.Scan(
+			&userID,
+			&user.Username,
+			&user.FirstName,
+			&user.LastName,
+			&user.Email,
+			&user.StudentID,
+			&user.Major,
+			&user.ProfilePicture,
+			&user.RoleID,
+			&user.Year,
+			&user.Gender,
+			&user.EmailVerified,
+			&user.StudentIDVerified,
+		)
+		if err != nil {
+			log.Println("Error scanning basic user row:", err)
+			continue
+		}
+
+		// Parse UUID
+		user.ID, err = uuid.Parse(userID)
+		if err != nil {
+			log.Println("Error parsing UUID:", err)
+			continue
+		}
+
+		// Set default values for required fields
+		user.Password = ""
+		user.CreatedAt = time.Now()
+		user.UpdatedAt = time.Now()
+
+		users = append(users, user)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Println("Error after basic users iteration:", err)
+		return nil, err
+	}
+
+	log.Printf("Successfully retrieved %d basic users", len(users))
 	return users, nil
 }
 

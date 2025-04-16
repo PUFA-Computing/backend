@@ -122,8 +122,6 @@ func SetupRoutes() *gin.Engine {
 
 	userRoutes := api.Group("/user")
 	{
-		userRoutes.GET("/list", userHandlers.ListUsers)
-
 		userRoutes.Use(middleware.TokenMiddleware())
 		userRoutes.GET("/:userID", userHandlers.GetUserByID)
 		userRoutes.PUT("/edit", userHandlers.EditUser)
@@ -138,6 +136,14 @@ func SetupRoutes() *gin.Engine {
 
 		// ListEventsRegisteredByUser
 		userRoutes.GET("/registered-events", eventHandlers.ListEventsRegisteredByUser)
+	}
+
+	// Admin routes for user management
+	adminRoutes := api.Group("/admin")
+	{
+		adminRoutes.Use(middleware.TokenMiddleware())
+		adminRoutes.GET("/users", userHandlers.ListUsers) // original endpoint for admin to list all users
+		adminRoutes.GET("/users/basic", userHandlers.GetAllUsersBasic) // new endpoint that avoids NULL issues
 	}
 
 	eventRoutes := api.Group("/event")
