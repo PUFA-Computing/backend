@@ -4,6 +4,7 @@ import (
 	"Backend/configs"
 	"bytes"
 	"context"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -21,15 +22,29 @@ func NewAWSService() (*S3Service, error) {
 	var bucket = s3Config.S3Bucket
 	var accessKey = s3Config.AWSAccessKeyId
 	var secretKey = s3Config.AWSSecretAccessKey
+	var url = s3Config.S3Endpoint
+	var usePathStyle = s3Config.S3UsePathStyle
 
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")))
+	cfg, err := config.LoadDefaultConfig(context.TODO(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+		config.WithEndpointResolverWithOptions(
+			aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+				return aws.Endpoint{
+					URL:           url,
+					SigningRegion: region,
+				}, nil
+			}),
+		),
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	// Create an Amazon S3 service client access key and so on
-	s3Client := s3.NewFromConfig(cfg)
+	s3Client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.UsePathStyle = usePathStyle
+	})
 
 	return &S3Service{
 		s3Client: s3Client,
